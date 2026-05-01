@@ -9,8 +9,9 @@ on:
       - main
 
 env:
-  AWS_REGION: us-east-1  # Change to your AWS region
-  ECR_REPOSITORY: mock-server  # Change to your ECR repository name
+  AWS_REGION: ap-southeast-2
+  AWS_ACCOUNT_ID: 350480401466
+  ECR_REPOSITORY: mock-server
 
 jobs:
   build-and-push:
@@ -40,7 +41,7 @@ jobs:
       - name: Set image name
         id: image
         env:
-          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          ECR_REGISTRY: ${{ env.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com
           IMAGE_TAG: ${{ github.sha }}
         run: |
           echo "image=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
@@ -49,12 +50,12 @@ jobs:
       - name: Build Docker image
         run: |
           docker build -t ${{ steps.image.outputs.image }} .
-          docker tag ${{ steps.image.outputs.image }} ${{ steps.login-ecr.outputs.registry }}/$ECR_REPOSITORY:latest
+          docker tag ${{ steps.image.outputs.image }} ${{ env.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.ECR_REPOSITORY }}:latest
 
       - name: Push to Amazon ECR
         run: |
           docker push ${{ steps.image.outputs.image }}
-          docker push ${{ steps.login-ecr.outputs.registry }}/$ECR_REPOSITORY:latest
+          docker push ${{ env.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.ECR_REPOSITORY }}:latest
 
   deploy:
     needs: build-and-push
@@ -85,7 +86,7 @@ jobs:
             sudo docker rm mock-server || true
             
             # Pull latest image from ECR
-            sudo docker pull ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.ECR_REPOSITORY }}:latest
+            sudo docker pull ${{ env.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.ECR_REPOSITORY }}:latest
             
             # Run new container
             sudo docker run -d \
@@ -93,6 +94,6 @@ jobs:
               -p 8080:8080 \
               -e GIN_MODE=release \
               --restart always \
-              ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.ECR_REPOSITORY }}:latest
+              ${{ env.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.ECR_REPOSITORY }}:latest
             
             echo "Deployment successful!"
