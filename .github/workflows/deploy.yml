@@ -97,7 +97,7 @@ jobs:
             echo "Running new container..."
             sudo docker run -d \
               --name mock-server \
-              -p 8080:8080 \
+              -p 80:8080 \
               --restart always \
               350480401466.dkr.ecr.ap-southeast-2.amazonaws.com/bbl/mock-server:latest
 
