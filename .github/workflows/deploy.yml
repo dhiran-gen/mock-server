@@ -8,7 +8,7 @@ on:
 env:
   AWS_REGION: ap-southeast-2
   AWS_ACCOUNT_ID: 350480401466
-  ECR_REPOSITORY: mock-server
+  ECR_REPOSITORY: bbl/mock-server
 
 jobs:
   build-and-push:
