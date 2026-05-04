@@ -4,9 +4,6 @@ on:
   push:
     branches:
       - main
-  pull_request:
-    branches:
-      - main
 
 env:
   AWS_REGION: ap-southeast-2
@@ -16,7 +13,7 @@ env:
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
-    
+
     permissions:
       id-token: write
       contents: read
@@ -31,21 +28,17 @@ jobs:
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: arn:aws:iam::350480401466:role/github-server
+          role-to-assume: arn:aws:iam::350480401466:role/github-admin
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Login to Amazon ECR
-        id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
       - name: Set image name
         id: image
-        env:
-          ECR_REGISTRY: ${{ env.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com
-          IMAGE_TAG: ${{ github.sha }}
         run: |
-          echo "image=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
-          echo "image=$ECR_REGISTRY/$ECR_REPOSITORY:latest" >> $GITHUB_OUTPUT
+          IMAGE_URI=${{ env.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.ECR_REPOSITORY }}
+          echo "image=$IMAGE_URI:${{ github.sha }}" >> $GITHUB_OUTPUT
 
       - name: Build Docker image
         run: |
@@ -60,40 +53,49 @@ jobs:
   deploy:
     needs: build-and-push
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
 
     steps:
-      - name: Deploy to EC2
-        uses: appleboy/ssh-action@master
+      - name: Deploy to EC2 via SSH
+        uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.EC2_HOST }}
-          username: ${{ secrets.EC2_USER }}
+          username: ubuntu
           key: ${{ secrets.EC2_SSH_KEY }}
-          port: ${{ secrets.EC2_PORT || 22 }}
           script: |
-            # Update system
-            sudo apt-get update
-            
-            # Ensure docker is installed and running
+            set -e
+
+            echo "Updating system..."
+            sudo apt-get update -y
+
+            echo "Installing Docker if not present..."
+            if ! command -v docker &> /dev/null; then
+              sudo apt install docker.io -y
+            fi
+
             sudo systemctl start docker
             sudo systemctl enable docker
-            
-            # Login to ECR
-            aws ecr get-login-password --region ${{ env.AWS_REGION }} | docker login --username AWS --password-stdin ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com
-            
-            # Stop and remove old container if exists
+
+            echo "Installing AWS CLI if not present..."
+            if ! command -v aws &> /dev/null; then
+              sudo apt install awscli -y
+            fi
+
+            echo "Logging into ECR..."
+            aws ecr get-login-password --region ap-southeast-2 | \
+            sudo docker login --username AWS --password-stdin 350480401466.dkr.ecr.ap-southeast-2.amazonaws.com
+
+            echo "Stopping old container..."
             sudo docker stop mock-server || true
             sudo docker rm mock-server || true
-            
-            # Pull latest image from ECR
-            sudo docker pull ${{ env.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.ECR_REPOSITORY }}:latest
-            
-            # Run new container
+
+            echo "Pulling latest image..."
+            sudo docker pull 350480401466.dkr.ecr.ap-southeast-2.amazonaws.com/mock-server:latest
+
+            echo "Running new container..."
             sudo docker run -d \
               --name mock-server \
               -p 8080:8080 \
-              -e GIN_MODE=release \
               --restart always \
-              ${{ env.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.ECR_REPOSITORY }}:latest
-            
-            echo "Deployment successful!"
+              350480401466.dkr.ecr.ap-southeast-2.amazonaws.com/mock-server:latest
+
+            echo "Deployment completed 🚀"
